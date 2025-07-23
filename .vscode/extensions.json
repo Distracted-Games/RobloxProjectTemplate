@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "evaera.vscode-rojo",              // Rojo integration for syncing with Roblox Studio
+    "JohnnyMorganz.stylua",            // Stylua formatter for Luau code
+    "JohnnyMorganz.luau-lsp",          // Luau Language Server for IntelliSense and diagnostics
+    "Kampfkarren.selene-vscode",       // Selene static analysis for Luau
+    "PKief.material-icon-theme"        // Material Icon Theme for custom folder icons
+  ]
+}

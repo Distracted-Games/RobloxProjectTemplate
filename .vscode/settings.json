@@ -1,0 +1,86 @@
+{
+    "files.associations": {
+        "*.lua": "lua",
+        "*.luau": "luau"
+    },
+    "files.insertFinalNewline": true,
+
+    /*
+        A more advanced form of syntax highlighting. It allows the editor to
+        determine the difference between:
+            - Variables vs Parameters
+            - Classes vs Functions
+            - Properties vs Methods
+            - Read-only vs mutable values
+        For example, with semantic highlighting enabled, a function parameter
+        might be colored differently than a local variable.
+    */
+    "editor.semanticHighlighting.enabled": true,
+
+    /*
+        Following the Roblox Lua Style Guide, comments should be no more than 80
+        columns and code no more than 100 columns. These rulers help maintain that.
+    */
+    "editor.rulers": [
+        80,
+        100
+    ],
+
+    // Stylua Formatting
+    "[lua]": {
+        "editor.defaultFormatter": "JohnnyMorganz.stylua",
+        "editor.formatOnSave": true
+    },
+    "[luau]": {
+        "editor.defaultFormatter": "JohnnyMorganz.stylua",
+        "editor.formatOnSave": true
+    },
+
+    // Fix `init` file name display to show parent directory name
+    "workbench.editor.customLabels.patterns": {
+        "**/init.lua": "${dirname} (${filename}.${extname})",
+        "**/init.luau": "${dirname} (${filename}.${extname})"
+    },
+
+    // Places code snippets at the top of Intellisense suggestion list.
+    "editor.snippetSuggestions": "top",
+
+    // Helps you spot and remove hidden characters that may break parsers, formatting, or logic.
+    "editor.renderControlCharacters": true,
+
+    // MaterialTheme Settings
+    "workbench.iconTheme": "material-icon-theme",
+    "material-icon-theme.folders.theme": "specific",
+    // My custom-set icons for services and common folders.
+    "material-icon-theme.folders.associations": {
+        "ReplicatedFirst": "queue",
+        "ReplicatedFirst/Source": "queue",
+        "ReplicatedFirst/src": "queue",
+        "ReplicatedStorage": "shared",
+        "ReplicatedStorage/Source": "shared",
+        "ReplicatedStorage/src": "shared",
+        "ServerScriptService": "server",
+        "ServerScriptService/Source": "server",
+        "ServerScriptService/src": "server",
+        "ServerStorage": "database",
+        "ServerStorage/Source": "database",
+        "ServerStorage/src": "database",
+        "StarterCharacterScripts": "console",
+        "StarterCharacterScripts/Source": "console",
+        "StarterCharacterScripts/src": "console",
+        "StarterPlayerScripts": "client",
+        "StarterPlayerScripts/Source": "client",
+        "StarterPlayerScripts/src": "client",
+        "Cmdr": "lib",
+        "PlayerData": "template",
+        "DataStore": "database"
+    },
+
+    // I prefer to see my diffs side-by-side as opposed to in-line.
+    "diffEditor.renderSideBySide": true,
+
+    // Luau Langugae Server settings
+    "luau-lsp.completion.imports.enabled": true,
+    "luau-lsp.completion.autocompleteEnd": true,
+    "luau-lsp.completion.imports.separateGroupsWithLine": true,
+}
