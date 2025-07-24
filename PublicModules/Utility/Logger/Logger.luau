@@ -39,7 +39,7 @@ export type Logger = {
 local function new(initialConfig: LoggerConfig?): Logger
     local config: LoggerConfig = initialConfig or {
         Debug = false,
-        Prefix = nil,
+        Prefix = nil :: string?,
     }
 
     -- Used in lew of a metatable to keep things simple.
