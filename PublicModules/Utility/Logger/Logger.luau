@@ -1,5 +1,9 @@
 --!strict
 --[[
+    Logger
+    @author DistractedGames
+    @version 1.1.0
+
     A configurable logging utility that can be used across multiple scripts.
 
     Example usage:
