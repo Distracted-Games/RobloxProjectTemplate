@@ -2,9 +2,10 @@
 --[[
     Logger
     @author DistractedGames
-    @version 1.1.0
+    @version 1.2.0
 
     A configurable logging utility that can be used across multiple scripts.
+    Includes a serializing function for converting tables to readable strings within logs.
 
     Example usage:
     ```lua
@@ -13,14 +14,25 @@
     local Logger = require(ReplicatedStorage.Source.Utility.Logger)
 
     local logger = Logger.new({
-        Debug = false, -- When true, will print debug messages, when false only warnings/errors
-        Prefix = "ScriptName" -- Prefixes [ScriptName] before the logger message
+        Debug = true, -- When true, will print debug messages, when false only warnings/errors
+        Prefix = "MyScript" -- Prefixes [MyScript] before the logger message
     })
+    local myTable = {
+        name = "Test",
+        value = 123,
+    }
 
-    -- Calling the logger message:
-    logger.log(`This is a debug message and wil only print if Debug is true`)
-    logger.log(`This is an error and will print a warnign in output no matter what`, true)
-    -- The second one is marked as a warning with the `true` value after the message
+    -- This is the default debug message use:
+    logger.log(`Debug messages will only print if Debug is true`)
+    -- Output: [MyScript] [debugMessage:15] Debug messages will only print if Debug is true
+    
+    -- This statement is marked as a warning with the `true` value after the message:
+    logger.log(`Warning messages will print regardless of Debug value`, true)
+    -- Output: [MyScript] [warningMessage:20] Warning messages will print regardless of Debug value
+    
+    -- Use the logger's serialize function inside an interpolated string to print tables.
+    logger.log(`Processing data: {logger.serialize(myTable)}`)
+    -- Output: [MyScript] [processData:35] Processing data: { name = Test, value = 123 }
     ```
 ]]
 
@@ -31,9 +43,46 @@ export type LoggerConfig = {
 
 export type Logger = {
     log: (message: string, isWarning: boolean?) -> (),
+    serialize: (value: any) -> string,
     setConfig: (newConfig: LoggerConfig) -> (),
     getConfig: () -> LoggerConfig,
 }
+
+-- Maximum depth for table serialization to prevent infinite loops.
+local MAX_SERIALIZE_DEPTH = 3
+
+-- Internal function to serialize table values for printing format.
+local function serializeValue(value: any, depth: number): string
+	depth = depth or 1
+	if depth > MAX_SERIALIZE_DEPTH then
+		return "{...}" -- Prevents infinite recursion
+	end
+
+	local valueType = typeof(value)
+
+	if valueType == "table" then
+		local parts = {}
+		-- Simple check for array-like vs dictionary-like tables
+		local isArray = #value > 0 and not next(value, #value)
+
+		for key, val in pairs(value) do
+			if isArray then
+				table.insert(parts, serializeValue(val, depth + 1))
+			else
+				table.insert(parts, `{tostring(key)} = {serializeValue(val, depth + 1)}`)
+			end
+		end
+		if isArray then
+			return "[" .. table.concat(parts, ", ") .. "]"
+		else
+			return "{ " .. table.concat(parts, ", ") .. " }"
+		end
+	elseif valueType == "string" then
+		return value -- Return raw string for clean logs
+	else
+		return tostring(value)
+	end
+end
 
 -- Creates a new logger instance with default configuration.
 local function new(initialConfig: LoggerConfig?): Logger
@@ -64,6 +113,11 @@ local function new(initialConfig: LoggerConfig?): Logger
             print(`{logHeader} {message}`)
         end
     end
+
+    -- Used to serialize table values for printing.
+    function logger.serialize(value: any): string
+		return serializeValue(value, 1)
+	end
 
     -- Used to update Logger configuration anytime after creation.
     function logger.setConfig(newConfig: LoggerConfig)
