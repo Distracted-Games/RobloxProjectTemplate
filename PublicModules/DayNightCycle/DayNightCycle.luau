@@ -18,7 +18,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 -- Assumes use of Logger module
-local Logger = require(ReplicatedStorage.Source.Utility.Logger)
+local Logger = require(ReplicatedStorage.Source.Utility.Logger.Logger)
 
 local logger = Logger.new({
 	Debug = false, -- Toggles verbose logging for this module.
