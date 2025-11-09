@@ -98,15 +98,15 @@ You can optionally include a `.vscode/extensions.json` file to prompt installati
 - `Kampfkarren.selene-vscode` — Selene static analysis
 - `PKief.material-icon-theme` — Custom folder icons
 
-## 📦 [Public Scripts & Functions](/PublicModules/)
+## 📦 [Optional Libraries](/OptionalLibraries/)
 
-This template also includes a selection of reusable scripts and utility functions designed to help other developers:
+This template also includes a selection of reusable scripts and utility functions ("libraries") designed to help other developers:
 
 - Modular components for common gameplay systems
 - Utility functions for debugging, data handling, and more
 - Examples and test cases to illustrate usage
 
-Feel free to explore, adapt, and contribute. These resources are intended to support both beginners and experienced developers working with Roblox Luau.
+Feel free to explore, adapt, and contribute. These resources are intended to support both beginners and experienced developers working with Roblox Luau and will continue to grow over time, so check back now and then.
 
 ---
 
