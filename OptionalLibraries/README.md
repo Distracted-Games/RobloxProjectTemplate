@@ -9,28 +9,28 @@ Each library is designed to be **self-contained**, **lightweight**, and **easy t
 
 ## 🧩 Using Optional Libraries
 
-You can freely include any of these libraries in your own project by simply **dragging them into your project's source folder** (for example, `src/Shared/Modules`).
+You can freely include any of these libraries in your own project by simply **dragging them into your project's source folder** (for example, `src/ReplicatedStorage/libs`).
 
 Example:
 ```
 
 src/
-└── Shared/
-└── Modules/
-├── Signal/
-│   ├── init.lua
-│   └── Connection.lua
-├── Promise/
-│   ├── init.lua
-│   └── Scheduler.lua
-└── TableUtil.lua
+└── ReplicatedStorage/
+    └── libs/
+    ├── Signal/
+    │   ├── init.lua
+    │   └── Connection.lua
+    ├── Promise/
+    │   ├── init.lua
+    │   └── Scheduler.lua
+    └── TableUtil.lua
 
 ````
 > *Note*: The above mentioned libraries are not neccesarily included and are just example names.
 
 Once added, you can require them like any other module:
 ```lua
-local Signal = require(ReplicatedStorage.Modules.Signal)
+local Signal = require(ReplicatedStorage.libs.Signal)
 ````
 
 > 💡 *Tip*: You can remove this entire folder if you don’t plan to use any of these libraries.
@@ -68,7 +68,7 @@ If you’d like to add your own libraries or improve existing ones:
 | `DayNightCycle`       | Simple implementation of a day/night cycle with time-of-day events.           |
 | `Logger`              | Robust debug logging tool to replace using multiple debug print strings.      |
 | `getInstance`         | Safely access nested instances by path with automatic error handling.         |
-| `Network`             | Utility for creating and managing RemoteEvent and RemoteFunction instances.   |
+| `Network`             | Type-safe wrapper for RemoteEvents and RemoteFunctions, with automatic setup and safe client/server invocation.   |
 
 *(The available libraries may change over time as new tools are added or improved.)*
 
