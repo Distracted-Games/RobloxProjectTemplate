@@ -88,7 +88,7 @@ end
     Connects a callback to a RemoteEvent, automatically handling the distinction
 	between OnServerEvent and OnClientEvent.
 ]]
-function Network.connectEvent(eventName: RemoteEventName.EnumType, callback: (...any) -> nil)
+function Network.connectEvent(eventName: RemoteEventName.EnumType, callback: (...any) -> ())
 	local remoteEvent = Network._getRemoteEvent(eventName)
 
 	if RunService:IsServer() then
