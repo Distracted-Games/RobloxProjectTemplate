@@ -2,7 +2,7 @@
 --[[
     DayNightCycle
     @author DistractedGames
-    @version 2.0.0
+    @version 2.0.1
 
     Manages the in-game day/night cycle, driven by a configurable real-world
     duration. It provides a robust event system to trigger actions at specific
@@ -145,13 +145,16 @@ function DayNightCycle.StartCycle()
 	timeRatio = MINUTES_IN_DAY / dayInSeconds
 	cycleStartTime = time()
 
-	-- Set initial time if specified
+	-- Determine where the cycle should start (in minutes)
+    local startMinutes =  Lighting:GetMinutesAfterMidnight()
 	if config.StartTimeOfDay then
-		local startMinutes = config.StartTimeOfDay * 60
-		Lighting:SetMinutesAfterMidnight(startMinutes)
-		-- Adjust start time to account for the offset
-		cycleStartTime -= (startMinutes / timeRatio)
+        -- Use the configured start time instead.
+		startMinutes = config.StartTimeOfDay * 60
 	end
+
+    -- Apply the time to lighting (ensures sync) and offset the internal timer.
+    Lighting:SetMinutesAfterMidnight(startMinutes)
+    cycleStartTime -= (startMinutes / timeRatio)
 
 	-- Connect to the game loop with a throttled update
 	connection = RunService.Heartbeat:Connect(onHeartbeat)
