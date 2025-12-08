@@ -30,6 +30,11 @@ Network.RemoteFunctions = RemoteFunctionName
 Network._started = false
 Network._remoteFolder = nil :: Folder?
 
+local function getPlayerPosition(player: Player): Vector3?
+    local character = player.Character
+    return if character then character:GetPivot().Position else nil
+end
+
 --[[
 	Initializes the network stack on the server. This **must be called before any
 	other network functions** are used on the server.
@@ -157,6 +162,57 @@ function Network.fireAllClientsExcept(eventName: RemoteEventName.EnumType, exclu
 
 		remoteEvent:FireClient(player, ...)
 	end
+end
+
+--[[
+    Fires a RemoteEvent from the server to all clients within a given distance
+    from a given player.
+]]
+function Network.fireAllClientsInRange(eventName: RemoteEventName.EnumType, sourcePosition: Vector3, maxDistance: number, ...: any)
+    assert(RunService:IsServer(), "Network.fireAllClientsInRange can only be called on the server")
+
+    local remoteEvent = Network._getRemoteEvent(eventName)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        local position = getPlayerPosition(player)
+        if not position then
+            continue
+        end
+
+        local distance = (sourcePosition - position).Magnitude
+        if distance <= maxDistance then
+            remoteEvent:FireClient(player, ...)
+        end
+    end
+end
+
+--[[
+    Fires a RemoteEvent from the server to all clients within a given distance
+    from a given player.
+]]
+function Network.fireAllClientsInRangeExcept(eventName: RemoteEventName.EnumType, source: Player, maxDistance: number, ...: any)
+    assert(RunService:IsServer(), "Network.fireAllClientsInRangeExcept can only be called on the server")
+    
+    local sourcePosition = getPlayerPosition(source)
+    if not sourcePosition then
+        return
+    end
+
+    local remoteEvent = Network._getRemoteEvent(eventName)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= source then
+            local position = getPlayerPosition(player)
+            if not position then
+                continue
+            end
+
+            local distance = (sourcePosition - position).Magnitude
+            if distance <= maxDistance then
+                remoteEvent:FireClient(player, ...)
+            end
+        end
+    end
 end
 
 --[[
