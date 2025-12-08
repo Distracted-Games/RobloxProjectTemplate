@@ -27,25 +27,24 @@ export type WeightedEntry = {
     weight: number,
 }
 
-type RandomTableSelection = typeof(setmetatable(
-	{} :: {
-		isArray: boolean,
-        itemList: { Item },
-        weightList: { number }?,
-        totalWeight: number?,
+type ClassType = {
+    isArray: boolean,
+    itemList: { Item },
+    weightList: { number }?,
+    totalWeight: number?,
 
-        -- Methods
-		getRandomItem: (self: RandomTableSelection) -> Item?,
-        getRandomItemWithWeight: (self: RandomTableSelection) -> WeightedEntry?,
-        containsItem: (self: RandomTableSelection, item: Item) -> boolean,
-        getAllItems: (self: RandomTableSelection) -> { Item },
-        getAllItemsWithWeights: (self: RandomTableSelection) -> { WeightedEntry },
-        getAllItemsWithWeightsSorted: (self: RandomTableSelection) -> { WeightedEntry },
-        addItem: (self: RandomTableSelection, item: Item, weight: number?) -> (),
-        removeItem: (self: RandomTableSelection, item: Item) -> boolean,
-	},
-	RandomTableSelection
-))
+    -- Methods
+    getRandomItem: (self: RandomTableSelection) -> Item?,
+    getRandomItemWithWeight: (self: RandomTableSelection) -> WeightedEntry?,
+    containsItem: (self: RandomTableSelection, item: Item) -> boolean,
+    getAllItems: (self: RandomTableSelection) -> { Item },
+    getAllItemsWithWeights: (self: RandomTableSelection) -> { WeightedEntry },
+    getAllItemsWithWeightsSorted: (self: RandomTableSelection) -> { WeightedEntry },
+    addItem: (self: RandomTableSelection, item: Item, weight: number?) -> (),
+    removeItem: (self: RandomTableSelection, item: Item) -> boolean,
+}
+
+type RandomTableSelection = setmetatable<ClassType, typeof(RandomTableSelection)>
 
 local RNG = Random.new() -- Never reused. Good for perfroamnce and correctness.
 
