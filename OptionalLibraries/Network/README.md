@@ -97,6 +97,12 @@ Network.fireAllClients(Network.RemoteEvents.ExampleRemote1, "Hello Everyone!")
 
 -- From server to all clients except one
 Network.fireAllClientsExcept(Network.RemoteEvents.ExampleRemote1, excludedPlayer, "Hello Everyone Else!")
+
+-- From server to all clients within range of a given position
+Network.fireAllClientsInRange(Network.RemoteEvents.ExampleRemote1, Vector3.zero, 100, "Hello Everyone within 100 studs of the world origin!")
+
+-- From server to all clients within range of an ignored one
+Network.fireAllClientsInRangeExcept(Network.RemoteEvents.ExampleRemote1, excludedPlayer, 100, "Hello Everyone else within 100 studs of excludedPlayer!")
 ```
 
 ---
