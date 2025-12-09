@@ -32,7 +32,9 @@ local isServer = RunService:IsServer()
 -- On the client, modules are expected to be in a "Source" folder within
 -- StarterPlayerScripts to avoid issues with built-in Roblox player modules.
 local rootDirectory = if isServer then ServerScriptService else StarterPlayerScripts
-local moduleDirectory: Folder = if isServer then rootDirectory else rootDirectory:WaitForChild("Source")
+local moduleDirectory = if isServer
+	then rootDirectory :: ServerScriptService
+	else (rootDirectory :: StarterPlayerScripts):WaitForChild("Source") :: Folder
 
 -- Configuration for the loader's behavior.
 local config = {
