@@ -60,11 +60,11 @@ function Network.startClientAsync()
 	Network._started = true
 
 	local remoteFolder =
-		REMOTE_FOLDER_PARENT:WaitForChild(REMOTE_FOLDER_NAME, REMOTE_REPLICATION_TIMEOUT_SECONDS) :: Folder
+		REMOTE_FOLDER_PARENT:WaitForChild(REMOTE_FOLDER_NAME, REMOTE_REPLICATION_TIMEOUT_SECONDS)
 
     -- This can occur if the client script running this initializes faster than the server script.
 	assert(
-		remoteFolder,
+		remoteFolder and remoteFolder:IsA("Folder"),
 		`Missing remoteFolder folder {REMOTE_FOLDER_NAME}. Did the client Network initialize before the server?`
 	)
 
@@ -73,18 +73,18 @@ function Network.startClientAsync()
 	Network._remoteFolder = remoteFolder
 end
 
-function Network._getRemoteEvent(eventName: RemoteEventName.EnumType)
+function Network._getRemoteEvent(eventName: RemoteEventName.EnumType): RemoteEvent
 	assert(Network._remoteFolder, "Network setup not complete")
 
-	local remoteEvent: RemoteEvent = getInstance(Network._remoteFolder, "RemoteEvents", eventName)
+	local remoteEvent = getInstance(Network._remoteFolder, "RemoteEvents", eventName) :: RemoteEvent
 
 	return remoteEvent
 end
 
-function Network._getRemoteFunction(functionName: RemoteFunctionName.EnumType)
+function Network._getRemoteFunction(functionName: RemoteFunctionName.EnumType): RemoteFunction
 	assert(Network._remoteFolder, "Network setup not complete")
 
-	local remoteFunction: RemoteFunction = getInstance(Network._remoteFolder, "RemoteFunctions", functionName)
+	local remoteFunction = getInstance(Network._remoteFolder, "RemoteFunctions", functionName) :: RemoteFunction
 
 	return remoteFunction
 end
@@ -93,7 +93,7 @@ end
     Connects a callback to a RemoteEvent, automatically handling the distinction
 	between OnServerEvent and OnClientEvent.
 ]]
-function Network.connectEvent(eventName: RemoteEventName.EnumType, callback: (...any) -> ())
+function Network.connectEvent(eventName: RemoteEventName.EnumType, callback: (...any) -> ()): RBXScriptConnection
 	local remoteEvent = Network._getRemoteEvent(eventName)
 
 	if RunService:IsServer() then
@@ -107,7 +107,7 @@ end
 	Binds a callback to a RemoteFunction, automatically handling the distinction
 	between OnServerInvoke and OnClientInvoke.
 ]]
-function Network.bindFunction(functionName: RemoteFunctionName.EnumType, callback: (...any) -> ...any)
+function Network.bindFunction(functionName: RemoteFunctionName.EnumType, callback: (...any) -> ...any): ...any
 	local remoteFunction = Network._getRemoteFunction(functionName)
 
 	if RunService:IsServer() then
@@ -148,15 +148,32 @@ function Network.fireAllClients(eventName: RemoteEventName.EnumType, ...: any)
 end
 
 --[[
-    Fires a RemoteEvent from the server to all clients except one.
+    Fires a RemoteEvent from the server to all connected clients in the provided
+    table.
 ]]
-function Network.fireAllClientsExcept(eventName: RemoteEventName.EnumType, excludePlayer: Player, ...: any)
+function Network.fireSpecificClients(eventName: RemoteEventName.EnumType, players: { Player }, ...: any)
+	assert(RunService:IsServer(), "Network.fireSpecificClients can only be called on the server")
+
+	local remoteEvent = Network._getRemoteEvent(eventName)
+	
+    for _, player in ipairs(Players:GetPlayers()) do
+        if table.find(players, player) then
+            remoteEvent:FireClient(player, ...)
+        end
+    end
+end
+
+--[[
+    Fires a RemoteEvent from the server to all clients except those in the
+    provided table.
+]]
+function Network.fireAllClientsExcept(eventName: RemoteEventName.EnumType, excludePlayers: { Player }, ...: any)
 	assert(RunService:IsServer(), "Network.fireAllClientsExcept can only be called on the server")
 
 	local remoteEvent = Network._getRemoteEvent(eventName)
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player == excludePlayer then
+		if table.find(excludePlayers, player) then
 			continue
 		end
 
@@ -166,9 +183,9 @@ end
 
 --[[
     Fires a RemoteEvent from the server to all clients within a given distance
-    from a given player.
+    from a provided position.
 ]]
-function Network.fireAllClientsInRange(eventName: RemoteEventName.EnumType, sourcePosition: Vector3, maxDistance: number, ...: any)
+function Network.fireClientsInRange(eventName: RemoteEventName.EnumType, sourcePosition: Vector3, maxDistance: number, ...: any)
     assert(RunService:IsServer(), "Network.fireAllClientsInRange can only be called on the server")
 
     local remoteEvent = Network._getRemoteEvent(eventName)
@@ -188,29 +205,26 @@ end
 
 --[[
     Fires a RemoteEvent from the server to all clients within a given distance
-    from a given player.
+    from a provided position except those provided in the exclusion table.
 ]]
-function Network.fireAllClientsInRangeExcept(eventName: RemoteEventName.EnumType, source: Player, maxDistance: number, ...: any)
+function Network.fireClientsInRangeExcept(eventName: RemoteEventName.EnumType, sourcePosition: Vector3, maxDistance: number, excludePlayers: { Player }, ...: any)
     assert(RunService:IsServer(), "Network.fireAllClientsInRangeExcept can only be called on the server")
-    
-    local sourcePosition = getPlayerPosition(source)
-    if not sourcePosition then
-        return
-    end
 
     local remoteEvent = Network._getRemoteEvent(eventName)
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= source then
-            local position = getPlayerPosition(player)
-            if not position then
-                continue
-            end
+        if table.find(excludePlayers, player) then
+            continue
+        end
 
-            local distance = (sourcePosition - position).Magnitude
-            if distance <= maxDistance then
-                remoteEvent:FireClient(player, ...)
-            end
+        local position = getPlayerPosition(player)
+        if not position then
+            continue
+        end
+
+        local distance = (sourcePosition - position).Magnitude
+        if distance <= maxDistance then
+            remoteEvent:FireClient(player, ...)
         end
     end
 end
