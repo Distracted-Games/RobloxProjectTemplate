@@ -15,6 +15,6 @@
 
 export type EnumType = ""
 
-local RemoteFunctionName = {}
+local RemoteFunctionName: { [EnumType]: EnumType } = {}
 
 return RemoteFunctionName

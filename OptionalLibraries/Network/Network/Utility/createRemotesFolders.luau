@@ -21,7 +21,7 @@ type PropertiesTable = { [string]: any } -- Used for createInstanceTree
     corresponding remotes within.
 ]]
 local function createRemotes(remoteFolder: Folder)
-    local remoteEventsFolder: Folder = getInstance(remoteFolder, RemoteFolderName.RemoteEvents)
+    local remoteEventsFolder = getInstance(remoteFolder, RemoteFolderName.RemoteEvents) :: Folder
 
     for eventName in pairs(RemoteEventName) do
 		local remoteEvent = Instance.new("RemoteEvent")
@@ -29,7 +29,7 @@ local function createRemotes(remoteFolder: Folder)
         remoteEvent.Parent = remoteEventsFolder
     end
 
-    local remoteFunctionsFolder: Folder = getInstance(remoteFolder, RemoteFolderName.RemoteFunctions)
+    local remoteFunctionsFolder = getInstance(remoteFolder, RemoteFolderName.RemoteFunctions) :: Folder
 
     for functionName in pairs(RemoteFunctionName) do
         local remoteFunction = Instance.new("RemoteFunction")

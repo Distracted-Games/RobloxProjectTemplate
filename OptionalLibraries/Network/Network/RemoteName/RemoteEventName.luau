@@ -8,7 +8,7 @@
 export type EnumType = "ExampleRemote1"
     | "ExampleRemote2"
 
-local RemoteEventName = {
+local RemoteEventName: { [EnumType]: EnumType } = {
     ExampleRemote1 = "ExampleRemote1" :: "ExampleRemote1",
     ExampleRemote2 = "ExampleRemote2" :: "ExampleRemote2",
 }
