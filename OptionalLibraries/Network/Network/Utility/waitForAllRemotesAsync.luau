@@ -18,8 +18,8 @@ local function waitForAllRemotesAsync(remoteFolder: Folder, timeoutSeconds: numb
 	local remoteFunctionsFolder = remoteFolder:FindFirstChild(RemoteFolderName.RemoteFunctions) :: Folder
 
 	-- Make each set of event and function names read-only.
-	local remoteEvents = table.freeze(RemoteEventName)
-	local remoteFunctions = table.freeze(RemoteFunctionName)
+	local remoteEvents = table.freeze(RemoteEventName) :: { string }
+	local remoteFunctions = table.freeze(RemoteFunctionName) :: { string }
 
 	-- Validate that the remotes defined under RemoteNames exist in remote folders.
 	local success = true
