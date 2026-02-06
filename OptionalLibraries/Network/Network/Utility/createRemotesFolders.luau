@@ -23,7 +23,7 @@ type PropertiesTable = { [string]: any } -- Used for createInstanceTree
 local function createRemotes(remoteFolder: Folder)
     local remoteEventsFolder = getInstance(remoteFolder, RemoteFolderName.RemoteEvents) :: Folder
 
-    for eventName in pairs(RemoteEventName) do
+    for _, eventName in RemoteEventName :: {string} do
 		local remoteEvent = Instance.new("RemoteEvent")
 		remoteEvent.Name = eventName
         remoteEvent.Parent = remoteEventsFolder
@@ -31,7 +31,7 @@ local function createRemotes(remoteFolder: Folder)
 
     local remoteFunctionsFolder = getInstance(remoteFolder, RemoteFolderName.RemoteFunctions) :: Folder
 
-    for functionName in pairs(RemoteFunctionName) do
+    for _, functionName in RemoteFunctionName :: {string} do
         local remoteFunction = Instance.new("RemoteFunction")
         remoteFunction.Name = functionName
         remoteFunction.Parent = remoteFunctionsFolder
