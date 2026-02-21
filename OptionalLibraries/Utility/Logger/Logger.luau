@@ -2,10 +2,11 @@
 --[[
     Logger
     @author DistractedGames
-    @version 1.2.0
+    @version 1.3.0
 
     A configurable logging utility that can be used across multiple scripts.
-    Includes a serializing function for converting tables to readable strings within logs.
+    Includes a specific logger for including collapsible tables in debug messages.
+    Also includes a serializing function for converting tables to readable strings within logs.
 
     Example usage:
     ```lua
@@ -24,15 +25,20 @@
 
     -- This is the default debug message use:
     logger.log(`Debug messages will only print if Debug is true`)
-    -- Output: [MyScript] [debugMessage:15] Debug messages will only print if Debug is true
+    -- Output: [MyScript] [debugMessage:27] Debug messages will only print if Debug is true
     
     -- This statement is marked as a warning with the `true` value after the message:
     logger.log(`Warning messages will print regardless of Debug value`, true)
-    -- Output: [MyScript] [warningMessage:20] Warning messages will print regardless of Debug value
+    -- Output: [MyScript] [warningMessage:31] Warning messages will print regardless of Debug value
+
+    -- Use the `logTable` method to include a regular table printout, similar to the normal `print` function.
+    -- The message is optional and prints before the table itself if included.
+    logger.logTable(myTable, "This is a table of data:")
+    -- Output: [MyScript] [debugMessage:36] This is a table of data: ▸ {...}
     
     -- Use the logger's serialize function inside an interpolated string to print tables.
     logger.log(`Processing data: {logger.serialize(myTable)}`)
-    -- Output: [MyScript] [processData:35] Processing data: { name = Test, value = 123 }
+    -- Output: [MyScript] [processData:40] Processing data: { name = Test, value = 123 }
     ```
 ]]
 
@@ -43,6 +49,7 @@ export type LoggerConfig = {
 
 export type Logger = {
     log: (message: string, isWarning: boolean?) -> (),
+    logTable: (table: any, message: string?) -> (),
     serialize: (value: any) -> string,
     setConfig: (newConfig: LoggerConfig) -> (),
     getConfig: () -> LoggerConfig,
@@ -111,6 +118,25 @@ local function new(initialConfig: LoggerConfig?): Logger
             warn(`{logHeader} {message}`)
         elseif config.Debug then
             print(`{logHeader} {message}`)
+        end
+    end
+
+    --[[
+        Logs a formatted table and optional message to the output.
+        The log includes the calling function's name and line for easier debugging.
+        @param table The table to be printed.
+        @param message An optional message to prepend to the table output.
+    ]]
+    function logger.logTable(table: any, message: string?)
+        local prefix = if config.Prefix then `[{config.Prefix}] ` else ""
+        local source, line, funcName = debug.info(2, "sln")
+        local formattedSource = `{string.match(source, "@(.*)")}`
+        local logHeader = `{prefix} [{funcName or formattedSource}:{line}]`
+
+        if message then
+            print(logHeader, message, table)
+        else
+            print(logHeader, table)
         end
     end
 
