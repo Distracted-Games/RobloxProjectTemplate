@@ -2,7 +2,7 @@
 --[[
     Logger
     @author DistractedGames
-    @version 1.3.0
+    @version 1.3.1
 
     A configurable logging utility that can be used across multiple scripts.
     Includes a specific logger for including collapsible tables in debug messages.
@@ -128,6 +128,10 @@ local function new(initialConfig: LoggerConfig?): Logger
         @param message An optional message to prepend to the table output.
     ]]
     function logger.logTable(table: any, message: string?)
+		if not config.Debug then
+            return
+        end
+
         local prefix = if config.Prefix then `[{config.Prefix}] ` else ""
         local source, line, funcName = debug.info(2, "sln")
         local formattedSource = `{string.match(source, "@(.*)")}`
