@@ -2,7 +2,7 @@
 --[[
     RandomTableSelection
     @author DistractedGames
-    @version 2.1.0
+    @version 2.1.1
 
     A utility class that provides random selection from either:
 
@@ -52,7 +52,7 @@ local _private: { [RandomTableSelection]: PrivateState } = setmetatable({}, { __
 
 local function isArray(tbl: { Item } | { [Item]: number }): boolean
     if #tbl > 0 then
-        local index = next(tbl)
+        local index = next(tbl :: any)
         return typeof(index) == "number"
     end
     return false
