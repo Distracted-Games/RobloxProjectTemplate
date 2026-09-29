@@ -31,6 +31,8 @@ A professional, modern Roblox project template engineered for production games. 
 
 ## Getting Started
 
+Regardless of if you want to use this template with VS Code, make sure to head to the [releases](https://github.com/Distracted-Games/RobloxProjectTemplate/releases/latest) page and download the place file. If you're not going to use VS Code, you're already good to go with just that file. Otherwise, keep reading.
+
 You have three convenient ways to start using this template for your own Roblox project:
 
 ### Option 1: Create a New Repository from This Template
