@@ -72,7 +72,7 @@
         "StarterPlayerScripts/Source": "client",
         "StarterPlayerScripts/src": "client",
         "Cmdr": "lib",
-        "PlayerData": "template",
+        "PlayerDataService": "template",
         "DataStore": "database"
     },
 

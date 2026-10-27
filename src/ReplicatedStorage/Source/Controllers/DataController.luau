@@ -150,6 +150,10 @@ function DataController.GetEffectiveData(): PlayerData?
 	return nil
 end
 
+function DataController.Get(): PlayerData?
+	return DataController.GetEffectiveData()
+end
+
 --[[
 	Asynchronous getter for projected effective data.
 ]]
