@@ -1,86 +1,244 @@
--- --[[
---     Sends a message to a profile's GlobalUpdates queue.
---     This can be used for cross-server or offline messaging.
--- ]]
--- function ProfileStore.MessageAsync<T>(
---     self: ProfileStore<T>,
---     key: string,
---     message: any
--- ): Promise.Promise<boolean>
---     if typeof(key) ~= "string" or #key == 0 or #key > 50 then
--- 		error(`[ProfileStore]: Invalid 'key' provided to MessageAsync.`, 2)
--- 	end
--- 	if typeof(message) ~= "table" then
--- 		error(`[ProfileStore]: 'message' must be a table.`, 2)
--- 	end
+--!strict
+--[[
+	Messaging add-on submodule for ProfileStore2.
+	Manages GlobalUpdates persistence, queuing, handler dispatch, and cross-server
+	or offline profile messaging via ProfileStore:MessageAsync().
+]]
 
---     return Promise.new(function(resolve, reject)
---         task.spawn(function()
---             local isMock = readMockFlag()
---             local sessionToken = generateSessionToken(self.Name, key, isMock)
+const Constants = require("../Constants")
+const Profile = require("../Profile")
+const Promise = require("../LeanPromise")
+const PromiseError = require("../LeanPromise/PromiseError")
+const Types = require("../Types")
+const Util = require("../Util")
 
---             local releaseQueue = waitForUpdateQueue(sessionToken)
+const MAX_BACKOFF_NORMAL = 20
 
---             local success, result = pcall(function()
---                 local function transformFunction(latestData: ProfileData<T>?): (ProfileData<T>, {number}?, { [string]: any }?)
---                     local data = latestData or { Metadata = {} } :: any -- Create a shell if profile is new
-                
---                     if not data.GlobalUpdates then
---                         data.GlobalUpdates = { 0, {} :: any }
---                     end
+export type TransformParams<T> = {
+	ExistingProfileHandle: ((latestData: Types.ProfileData<T>) -> ())?,
+	MissingProfileHandle: ((latestData: Types.ProfileData<T>) -> ())?,
+	EditProfile: ((latestData: Types.ProfileData<T>) -> ())?,
+}
 
---                     local updateIndex = data.GlobalUpdates[1] + 1
---                     local updateList = data.GlobalUpdates[2]
+export type MessagingCallbacks<T> = {
+	WaitForStoreReady: () -> (),
+	IsServerClosing: () -> boolean,
+	PerformDataStoreOperation: (
+		key: string,
+		transformParams: TransformParams<T>,
+		isUserMock: boolean
+	) -> (Types.ProfileData<T>?, DataStoreKeyInfo?, string?),
+	NotifyMessageTarget: (key: string, loadedData: Types.ProfileData<T>, isUserMock: boolean) -> (),
+}
 
---                     data.GlobalUpdates[1] = updateIndex
---                     table.insert(updateList, { updateIndex, message })
+const Messaging = {}
 
---                     -- Enforce max queue size.
---                     while #updateList > Constants.MAX_MESSAGE_QUEUE do
---                         table.remove(updateList, 1)
---                     end
+--[[
+	Synchronizes GlobalUpdates state after a successful DataStore read/write and dispatches
+	newly received messages to registered handlers if the session is active.
+]]
+function Messaging.SyncAndDispatchGlobalUpdates(
+	profile: Profile.Profile<any>,
+	loadedData: Types.ProfileData<any>,
+	shouldDispatch: boolean
+)
+	const lockedUpdates = profile._lockedGlobalUpdates
+	const receivedUpdates = profile._receivedGlobalUpdates
+	const activeUpdates: { Types.GlobalUpdateEntry } = if typeof(loadedData.GlobalUpdates) == "table"
+			and typeof(loadedData.GlobalUpdates[2]) == "table"
+		then loadedData.GlobalUpdates[2]
+		else {}
 
---                     return data, data.UserIds, data.RobloxMetaData
---                 end
+	const newUpdates: { Types.GlobalUpdateEntry } = {}
+	const stillPending: { [number]: boolean } = {}
 
---                 local loadedData, _ = self:_updateAsync(key, transformFunction, isMock)
---                 return loadedData
---             end)
+	for _, update in activeUpdates do
+		if typeof(update) ~= "table" then
+			continue
+		end
+		const updateId = update[1]
+		if typeof(updateId) ~= "number" then
+			continue
+		end
 
---             releaseQueue()
+		if lockedUpdates[updateId] then
+			stillPending[updateId] = true
+		elseif not receivedUpdates[updateId] then
+			receivedUpdates[updateId] = true
+			table.insert(newUpdates, update)
+		end
+	end
 
---             if not success then
---                 warn(`[ProfileStore]: MessageAsync failed for key '{key}': {tostring(result)}`)
---                 resolve(false)
---                 return
---             end
+	for updateId in lockedUpdates do
+		if not stillPending[updateId] then
+			lockedUpdates[updateId] = nil
+		end
+	end
 
---             local loadedData = result
---             if not loadedData then
---                 resolve(false)
---                 return
---             end
+	profile._globalUpdates = activeUpdates
 
---             -- After successfully sending the message, check if the profile is
---             -- active on this server and notify it.
-            
---             local activeProfile = ActiveSessionCheck[sessionToken]
---             if activeProfile then
---                 activeProfile:Save() -- Trigger a save to pull in the new message
---             else
---                 -- If active on another server, poke it via MessageingService.
---                 local metaData = loadedData.MetaData or {}
---                 local activeSession = metaData.ActiveSession
---                 if typeof(activeSession) == "table" and typeof(activeSession[3]) == "string" then
---                     MessagingService:PublishAsync(`PS_{activeSession[3]}`, {
---                         LoadCount = metaData.SessionLoadCount or 0,
---                     })
---                 end
---             end
+	if not shouldDispatch then
+		return
+	end
 
---             resolve(true)
---         end)
---     end)
--- end
+	for _, update in newUpdates do
+		const updateId = update[1] :: number
+		const updateData = update[#update]
 
-return {}
+		for _, handler in profile._messageHandlers do
+			if lockedUpdates[updateId] then
+				break
+			end
+
+			local isProcessed = false
+			local function processedCallback()
+				isProcessed = true
+				lockedUpdates[updateId] = true
+			end
+
+			const payloadCopy = Util.DeepCopyTable(updateData)
+			task.spawn(handler, payloadCopy, processedCallback)
+
+			if isProcessed then
+				break
+			end
+		end
+	end
+end
+
+--[[
+	Removes messages that have been marked as processed by a handler from the
+	persisted GlobalUpdates payload during a profile save.
+]]
+function Messaging.PruneLockedUpdatesFromPayload(
+	lockedUpdates: { [number]: boolean },
+	globalUpdates: Types.GlobalUpdatesPayload?
+)
+	if next(lockedUpdates) == nil then
+		return
+	end
+	if typeof(globalUpdates) ~= "table" or typeof(globalUpdates[2]) ~= "table" then
+		return
+	end
+
+	const activeUpdates = globalUpdates[2] :: { Types.GlobalUpdateEntry }
+	local index = 1
+	while index <= #activeUpdates do
+		const update = activeUpdates[index]
+		if typeof(update) == "table" and typeof(update[1]) == "number" and lockedUpdates[update[1]] then
+			table.remove(activeUpdates, index)
+		else
+			index += 1
+		end
+	end
+end
+
+--[[
+	Appends a message table to a profile's GlobalUpdates queue and notifies any live session
+	(either locally on this server or remotely via MessagingService).
+]]
+function Messaging.MessageAsyncInternal<T>(
+	callbacks: MessagingCallbacks<T>,
+	key: string,
+	message: { [any]: any },
+	isUserMock: boolean
+): Promise.Promise<boolean>
+	if typeof(key) ~= "string" or #key == 0 or #key > 50 then
+		error("[ProfileStore]: Invalid 'key' provided to MessageAsync. Must be a string of 1-50 characters.", 3)
+	end
+	if typeof(message) ~= "table" then
+		error(`[ProfileStore]: 'message' provided to MessageAsync must be a table, got {typeof(message)}.`, 3)
+	end
+
+	const messageSnapshot = Util.DeepCopyTable(message)
+
+	return Promise.new(function(resolve: (boolean) -> (), reject, onCancel)
+		local isCancelled = false
+		onCancel(function()
+			isCancelled = true
+		end)
+
+		if callbacks.IsServerClosing() then
+			reject(PromiseError.new({
+				error = "Cannot call MessageAsync while server is shutting down.",
+				kind = Types.ErrorKind.Cancelled,
+			}))
+			return
+		end
+
+		callbacks.WaitForStoreReady()
+
+		local backoff = 1
+		local attempt = 0
+
+		while true do
+			if callbacks.IsServerClosing() or isCancelled then
+				reject(PromiseError.new({
+					error = "MessageAsync was cancelled or server is shutting down.",
+					kind = Types.ErrorKind.Cancelled,
+				}))
+				return
+			end
+
+			const loadedData, _, errorMessage = callbacks.PerformDataStoreOperation(key, {
+				ExistingProfileHandle = nil,
+				MissingProfileHandle = nil,
+				EditProfile = function(latestData: Types.ProfileData<T>)
+					local globalUpdates: Types.GlobalUpdatesPayload
+					if
+						typeof(latestData.GlobalUpdates) == "table"
+						and typeof(latestData.GlobalUpdates[1]) == "number"
+						and typeof(latestData.GlobalUpdates[2]) == "table"
+					then
+						globalUpdates = latestData.GlobalUpdates
+					else
+						globalUpdates = { 0, {} }
+						latestData.GlobalUpdates = globalUpdates
+					end
+
+					const nextUpdateId = (globalUpdates[1] :: number) + 1
+					const updateList = globalUpdates[2] :: { Types.GlobalUpdateEntry }
+
+					globalUpdates[1] = nextUpdateId
+					table.insert(updateList, { nextUpdateId, Util.DeepCopyTable(messageSnapshot) })
+
+					while #updateList > Constants.MAX_MESSAGE_QUEUE do
+						table.remove(updateList, 1)
+					end
+				end,
+			}, isUserMock)
+
+			if errorMessage == nil and loadedData ~= nil then
+				callbacks.NotifyMessageTarget(key, loadedData, isUserMock)
+				resolve(true)
+				return
+			end
+
+			const errText = errorMessage or `Failed to send message to key '{key}'.`
+			attempt += 1
+
+			if attempt > Constants.MAX_TRANSIENT_RETRIES or not Util.IsTransientDataStoreError(errText) then
+				reject(PromiseError.new({
+					error = errText,
+					kind = Types.ErrorKind.DataStoreError,
+				}))
+				return
+			end
+
+			local function shouldAbort(): boolean
+				return callbacks.IsServerClosing() or isCancelled
+			end
+
+			if Util.WaitInterruptible(backoff, shouldAbort) then
+				reject(PromiseError.new({
+					error = "MessageAsync was cancelled or server is shutting down.",
+					kind = Types.ErrorKind.Cancelled,
+				}))
+				return
+			end
+			backoff = math.min(MAX_BACKOFF_NORMAL, backoff * 2)
+		end
+	end)
+end
+
+return table.freeze(Messaging)
