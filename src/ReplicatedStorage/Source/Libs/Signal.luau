@@ -1,10 +1,10 @@
 --!strict
 --[[
 	@author DistractedGames
-	@version 1.2.0
+	@version 1.2.1
 	@license MIT License
 
-	Batched Yield-Safe Signal Implementation
+	Yield-Safe Pooled Runner Signal Implementation
 
 	A Signal class that dispatches and observes events with behavior matching
 	RBXScriptSignal. Caches runner coroutines so yielding inside signal handlers
@@ -13,10 +13,10 @@
 	Based upon the work of stravant and sleitnick.
 ]]
 
-local Connection = {}
+const Connection = {}
 Connection.__index = Connection
 
-local Signal = {}
+const Signal = {}
 Signal.__index = Signal
 
 type ConnectionData<T...> = {
@@ -33,6 +33,7 @@ type SignalData<T...> = {
 	_listenerCount: number,
 	_proxyHandler: RBXScriptConnection?,
 	_yieldedThreads: { [thread]: boolean }?,
+	_isDestroyed: boolean?,
 }
 
 export type Signal<T... = ...any> = setmetatable<SignalData<T...>, typeof(Signal)>
@@ -44,7 +45,7 @@ local freeRunnerThread: thread? = nil
 -- and releases the thread back to the idle slot once the callback finishes.
 -- If the callback yields, a new runner thread will be created for subsequent handlers.
 local function acquireRunnerAndCall(callback: (...any) -> (), ...: any)
-	local acquiredRunnerThread = freeRunnerThread
+	const acquiredRunnerThread = freeRunnerThread
 	freeRunnerThread = nil
 	callback(...)
 	-- The handler finished running cleanly; this runner thread is free again.
@@ -59,6 +60,13 @@ local function runEventHandlerInFreeThread(...: any)
 	end
 end
 
+-- Static deferred dispatcher to avoid allocating a closure on every listener during FireDeferred.
+local function runDeferredListener<T...>(connection: Connection<T...>, ...: T...)
+	if connection.Connected then
+		connection._listener(...)
+	end
+end
+
 --[[
 	Disconnects the connection from its parent Signal so it will no longer receive events.
 ]]
@@ -68,7 +76,7 @@ function Connection.Disconnect<T...>(self: Connection<T...>)
 	end
 	self.Connected = false
 
-	local signal = self._signal
+	const signal = self._signal
 	signal._listenerCount -= 1
 
 	-- Unhook the node without clearing `_next` so any active `Fire` calls
@@ -93,25 +101,30 @@ Connection.Destroy = Connection.Disconnect
 	Constructs a new Signal instance.
 ]]
 function Signal.new<T...>(): Signal<T...>
-	local self = setmetatable({}, Signal) :: Signal<T...>
-	self._head = nil
-	self._listenerCount = 0
-	self._proxyHandler = nil
-	self._yieldedThreads = nil
+	const self = setmetatable({
+		_head = nil,
+		_listenerCount = 0,
+		_proxyHandler = nil,
+		_yieldedThreads = nil,
+		_isDestroyed = false,
+	}, Signal) :: Signal<T...>
 
 	return self
 end
 
 --[[
 	Constructs a new Signal that wraps around an existing RBXScriptSignal.
+
+	Note: The created Signal establishes a strong connection to the underlying
+	RBXScriptSignal. You must call `Destroy()` on the returned Signal when it is
+	no longer needed to disconnect the proxy handler.
 ]]
 function Signal.Wrap<T...>(rbxScriptSignal: RBXScriptSignal): Signal<T...>
-	assert(
-		typeof(rbxScriptSignal) == "RBXScriptSignal",
-		`Argument #1 to Signal.Wrap must be a RBXScriptSignal; got {typeof(rbxScriptSignal)}`
-	)
+	if typeof(rbxScriptSignal) ~= "RBXScriptSignal" then
+		error(`[Signal]: Wrap expects an RBXScriptSignal; got {typeof(rbxScriptSignal)}`, 2)
+	end
 
-	local signal = Signal.new() :: Signal<T...>
+	const signal = Signal.new() :: Signal<T...>
 	signal._proxyHandler = rbxScriptSignal:Connect(function(...: any)
 		signal:Fire(...)
 	end)
@@ -130,15 +143,19 @@ end
 	Connects a callback function to the signal, which will be invoked anytime the signal is fired.
 ]]
 function Signal.Connect<T...>(self: Signal<T...>, callback: (T...) -> ()): Connection<T...>
+	if self._isDestroyed then
+		error("[Signal]: Cannot connect to a destroyed Signal.", 2)
+	end
 	if typeof(callback) ~= "function" then
 		error(`[Signal]: Listener must be a function; got {typeof(callback)}`, 2)
 	end
 
-	local connection = setmetatable({}, Connection) :: Connection<T...>
-	connection.Connected = true
-	connection._listener = callback
-	connection._signal = self
-	connection._next = self._head
+	const connection = setmetatable({
+		Connected = true,
+		_listener = callback,
+		_signal = self,
+		_next = self._head,
+	}, Connection) :: Connection<T...>
 
 	self._head = connection
 	self._listenerCount += 1
@@ -151,6 +168,9 @@ end
 	fires, automatically disconnecting itself before execution.
 ]]
 function Signal.Once<T...>(self: Signal<T...>, callback: (T...) -> ()): Connection<T...>
+	if self._isDestroyed then
+		error("[Signal]: Cannot connect to a destroyed Signal.", 2)
+	end
 	if typeof(callback) ~= "function" then
 		error(`[Signal]: Listener must be a function; got {typeof(callback)}`, 2)
 	end
@@ -172,13 +192,16 @@ function Signal.Once<T...>(self: Signal<T...>, callback: (T...) -> ()): Connecti
 end
 
 --[[
-	Returns an array of all active connections currently listening to the signal.
+	Returns an array of all active connections currently listening to the signal,
+	ordered from newest to oldest (LIFO).
 ]]
 function Signal.GetConnections<T...>(self: Signal<T...>): { Connection<T...> }
-	local connections = table.create(self._listenerCount) :: { Connection<T...> }
+	const connections = table.create(self._listenerCount) :: { Connection<T...> }
+	local count = 0
 	local item = self._head
 	while item do
-		table.insert(connections, item)
+		count += 1
+		connections[count] = item
 		item = item._next
 	end
 
@@ -187,6 +210,7 @@ end
 
 --[[
 	Returns the current number of active listeners connected to the signal in O(1) time.
+	Note: This count includes any active internal connections created by `Wait()`.
 ]]
 function Signal.GetListenerCount<T...>(self: Signal<T...>): number
 	return self._listenerCount
@@ -205,11 +229,10 @@ function Signal.DisconnectAll<T...>(self: Signal<T...>)
 	self._head = nil
 	self._listenerCount = 0
 
-	local yieldedThreads = self._yieldedThreads
+	const yieldedThreads = self._yieldedThreads
 	if yieldedThreads then
 		for thread in yieldedThreads do
 			if coroutine.status(thread) == "suspended" then
-				warn(debug.traceback(thread, "signal disconnected; yielded thread cancelled", 2))
 				task.cancel(thread)
 			end
 		end
@@ -225,27 +248,21 @@ function Signal.Fire<T...>(self: Signal<T...>, ...: T...)
 	local item = self._head
 	while item do
 		if item.Connected then
-			if not freeRunnerThread then
-				freeRunnerThread = coroutine.create(runEventHandlerInFreeThread)
-			end
-			task.spawn(freeRunnerThread :: thread, item._listener, ...)
+			local runnerThread: thread = freeRunnerThread or coroutine.create(runEventHandlerInFreeThread)
+			freeRunnerThread = runnerThread
+			task.spawn(runnerThread, item._listener, ...)
 		end
 		item = item._next
 	end
 end
 
 --[[
-	Fires the signal using `task.defer` for each connected listener callback.
+	Fires the signal using `task.defer` for each connected listener callback without closure allocations.
 ]]
 function Signal.FireDeferred<T...>(self: Signal<T...>, ...: T...)
 	local item = self._head
 	while item do
-		const connection = item
-		task.defer(function(...: T...)
-			if connection.Connected then
-				connection._listener(...)
-			end
-		end, ...)
+		task.defer(runDeferredListener, item, ...)
 		item = item._next
 	end
 end
@@ -254,6 +271,10 @@ end
 	Yields the calling thread until the signal next fires, returning the fired arguments.
 ]]
 function Signal.Wait<T...>(self: Signal<T...>): T...
+	if self._isDestroyed then
+		error("[Signal]: Cannot wait on a destroyed Signal.", 2)
+	end
+
 	local existingThreads = self._yieldedThreads
 	const yieldedThreads: { [thread]: boolean } = if existingThreads then existingThreads else {}
 	if not existingThreads then
@@ -275,13 +296,14 @@ function Signal.Wait<T...>(self: Signal<T...>): T...
 end
 
 --[[
-	Disconnects all listeners, cancels any waiting threads, and disconnects the underlying
-	RBXScriptSignal proxy if this signal was created with `Signal.Wrap`.
+	Disconnects all listeners, cancels any waiting threads, marks the signal as destroyed,
+	and disconnects the underlying RBXScriptSignal proxy if this signal was created with `Signal.Wrap`.
 ]]
 function Signal.Destroy<T...>(self: Signal<T...>)
+	self._isDestroyed = true
 	self:DisconnectAll()
 
-	local proxyHandler = self._proxyHandler
+	const proxyHandler = self._proxyHandler
 	if proxyHandler then
 		proxyHandler:Disconnect()
 		self._proxyHandler = nil
