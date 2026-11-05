@@ -95,6 +95,7 @@ local function onPlayerRemoving(player: Player)
 	if profile then
 		profile:EndSession()
 	end
+	_profiles[player] = nil
 end
 
 --[[
