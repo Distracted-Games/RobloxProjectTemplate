@@ -5,9 +5,9 @@
 	and provides methods for reconciliation, messaging, user association, and saving.
 ]]
 
-const Promise = require("./LeanPromise")
-const PromiseError = require("./LeanPromise/PromiseError")
-const Signal = require("./Signal")
+const Promise = require("../../../ReplicatedStorage/Source/Libs/LeanPromise")
+const PromiseError = require("../../../ReplicatedStorage/Source/Libs/LeanPromise/PromiseError")
+const Signal = require("../../../ReplicatedStorage/Source/Libs/Signal")
 const Types = require("./Types")
 const Util = require("./Util")
 
@@ -157,7 +157,7 @@ end
 	Returns true if the profile session is currently active on this server.
 	This guarantee is only valid until code yields.
 ]]
-function Profile.IsActive(self: Profile<any>): boolean
+function Profile.IsActive<T>(self: Profile<T>): boolean
 	return self._isActive and not self._viewMode
 end
 
@@ -165,7 +165,7 @@ end
 	Fills in missing (nil) string-keyed fields in Profile.Data from the template table
 	that was provided to the parent ProfileStore.
 ]]
-function Profile.Reconcile(self: Profile<any>)
+function Profile.Reconcile<T>(self: Profile<T>)
 	if typeof(self.Data) ~= "table" then
 		error(`[ProfileStore]: Profile.Data must be a table to reconcile (KEY: {self.Key}).`, 2)
 	end
@@ -180,7 +180,7 @@ end
 	Ends the session for this profile, triggering the final guaranteed save.
 	Returns a Promise that resolves once the final save and release complete.
 ]]
-function Profile.EndSession(self: Profile<any>): Promise.Promise<nil>
+function Profile.EndSession<T>(self: Profile<T>): Promise.Promise<nil>
 	if self._viewMode then
 		return Promise.resolve(nil)
 	end
@@ -199,7 +199,7 @@ end
 --[[
 	Associates a UserId with the profile for GDPR compliance.
 ]]
-function Profile.AddUserId(self: Profile<any>, userId: number)
+function Profile.AddUserId<T>(self: Profile<T>, userId: number)
 	if typeof(userId) ~= "number" or userId % 1 ~= 0 then
 		warn(`[ProfileStore]: Invalid UserId provided to :AddUserId() ({tostring(userId)})`)
 		return
@@ -218,7 +218,7 @@ end
 --[[
 	Removes a UserId association from the profile.
 ]]
-function Profile.RemoveUserId(self: Profile<any>, userId: number)
+function Profile.RemoveUserId<T>(self: Profile<T>, userId: number)
 	if typeof(userId) ~= "number" or userId % 1 ~= 0 then
 		warn(`[ProfileStore]: Invalid UserId provided to :RemoveUserId() ({tostring(userId)})`)
 		return
@@ -234,7 +234,7 @@ end
 	Registers a handler function for processing incoming messages (GlobalUpdates).
 	The handler is immediately invoked for any existing, unprocessed messages.
 ]]
-function Profile.MessageHandler(self: Profile<any>, handler: (message: any, processed: () -> ()) -> ())
+function Profile.MessageHandler<T>(self: Profile<T>, handler: (message: any, processed: () -> ()) -> ())
 	if typeof(handler) ~= "function" then
 		error(`[ProfileStore]: Argument to :MessageHandler() must be a function. Got {typeof(handler)}.`, 2)
 	end
@@ -295,7 +295,7 @@ end
 	This method is ONLY for profiles loaded in view mode via GetAsync or VersionQuery.
 	Returns a Promise that resolves when the overwrite completes, or rejects on failure.
 ]]
-function Profile.SetAsync(self: Profile<any>): Promise.Promise<nil>
+function Profile.SetAsync<T>(self: Profile<T>): Promise.Promise<nil>
 	if not self._viewMode then
 		error("[ProfileStore]: :SetAsync() can only be used in view mode.", 2)
 	end
