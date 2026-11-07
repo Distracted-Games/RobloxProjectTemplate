@@ -124,6 +124,33 @@ The core bootstrapper responsible for scanning and initializing all modules acro
 
 A full-stack player data management solution combining resilient server persistence with instant client responsiveness.
 
+#### Architectural Overview
+
+Player data management follows a **server-authoritative, unidirectional replication** model with **optimistic client prediction and delta reconciliation**.
+
+```mermaid
+flowchart TD
+    subgraph Server [Server Environment]
+        DS[("ProfileStore2 / DataStore")] -->|"LoadProfileAsync"| PDS[PlayerDataService]
+        PDS -->|"GetProfile / WaitForDataAsync"| ReadOnlyConsumers[Server Systems / Services]
+        Mutator[Server System] -->|"PlayerDataService.UpdateData"| PDS
+        PDS -->|"TableUtil.Diff"| DRS[DataReplicationService]
+        PDS -->|"Save / SessionEnd"| DS
+        PDS <-->|"GlobalUpdates / MessageAsync"| ProfileMessages[Cross-Server Messaging]
+    end
+
+    subgraph Replication [Network Boundary]
+        DRS -->|"InitialDataLoaded (Full Snapshot)"| DC[DataController]
+        DRS -->|"PlayerDataUpdated (Deltas)"| DC
+    end
+
+    subgraph Client [Client Environment]
+        DC -->|"Effective Projection"| ClientUI[UI / Controllers / Presentation]
+        ClientUI -->|"PredictMutation"| DC
+        DC -->|"Reconcile / Rollback"| ClientUI
+    end
+```
+
 #### Server: `PlayerDataService`
 * **Session Locking**: Powered by [ProfileStore2](https://github.com/Distracted-Games/ProfileStore2) to prevent multi-server profile collisions and data corruption.
 * **GDPR Compliance**: Automatically registers `player.UserId` for compliance.
