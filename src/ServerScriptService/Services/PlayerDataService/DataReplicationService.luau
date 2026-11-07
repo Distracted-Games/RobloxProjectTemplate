@@ -1,4 +1,5 @@
 --!strict
+
 const Players = game:GetService("Players")
 
 const Network = require("../../../ReplicatedStorage/Source/Libs/Network")
@@ -12,19 +13,21 @@ local function replicateDataDeltas(player: Player, _data: PlayerData, deltas: De
 	Network.fireClient(Network.RemoteEvents.PlayerDataUpdated, player, deltas, triggeredByTxId)
 end
 
-return {
-	Start = function()
-		PlayerDataService.Signals.OnDataUpdated:Connect(replicateDataDeltas)
+const DataReplicationService = {}
 
-		PlayerDataService.Signals.PlayerProfileLoaded:Connect(function(player: Player, data: PlayerData)
+function DataReplicationService.Start()
+	PlayerDataService.Signals.OnDataUpdated:Connect(replicateDataDeltas)
+
+	PlayerDataService.Signals.PlayerProfileLoaded:Connect(function(player: Player, data: PlayerData)
+		Network.fireClient(Network.RemoteEvents.InitialDataLoaded, player, data)
+	end)
+
+	for _, player in Players:GetPlayers() do
+		const data = PlayerDataService.GetProfile(player)
+		if data then
 			Network.fireClient(Network.RemoteEvents.InitialDataLoaded, player, data)
-		end)
-
-		for _, player in Players:GetPlayers() do
-			local data = PlayerDataService.GetProfile(player)
-			if data then
-				Network.fireClient(Network.RemoteEvents.InitialDataLoaded, player, data)
-			end
 		end
-	end,
-}
+	end
+end
+
+return DataReplicationService

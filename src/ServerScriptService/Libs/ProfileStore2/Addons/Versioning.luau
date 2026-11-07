@@ -7,8 +7,8 @@
 
 const Constants = require("../Constants")
 const Profile = require("../Profile")
-const Promise = require("../LeanPromise")
-const PromiseError = require("../LeanPromise/PromiseError")
+const Promise = require("../../../../ReplicatedStorage/Source/Libs/LeanPromise")
+const PromiseError = require("../../../../ReplicatedStorage/Source/Libs/LeanPromise/PromiseError")
 const Types = require("../Types")
 const Util = require("../Util")
 

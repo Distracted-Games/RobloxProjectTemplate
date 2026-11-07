@@ -8,11 +8,6 @@ const Signal = require("../Libs/Signal")
 const TableUtil = require("../Utility/TableUtil")
 const TypeFunctions = require("../Utility/TypeFunctions")
 
-local logger = Logger.new({
-	Debug = false,
-	Prefix = script.Name,
-})
-
 const DEFAULT_TRANSACTION_TIMEOUT = 5
 
 export type PlayerData = TypeFunctions.AddKeyIndexer<PlayerDataType.PlayerData>
@@ -33,14 +28,21 @@ export type TransactionResult = {
 
 type Promise<T> = LeanPromise.Promise<T>
 
+local logger = Logger.new({
+	Debug = false,
+	Prefix = script.Name,
+})
+
 local _authoritativeData: PlayerData? = nil
 local _effectiveData: PlayerData? = nil
+local _frozenAuthoritativeData: PlayerData? = nil
+local _frozenEffectiveData: PlayerData? = nil
 local _pendingTransactions: { Transaction } = {}
 local _nextTransactionId = 0
 
 local _initialDataSignal = Signal.new() :: Signal.Signal<PlayerData>
 
-local DataController = {}
+const DataController = {}
 
 DataController.OnInitialDataLoaded = Signal.new() :: Signal.Signal<PlayerData>
 DataController.OnDataUpdated = Signal.new() :: Signal.Signal<PlayerData, Deltas>
@@ -63,26 +65,28 @@ local function computeEffectiveData(): PlayerData?
 end
 
 --[[
-	Re-projects effective data, updates the cache, and fires OnDataUpdated if diffs exist.
+	Re-projects effective data, refreshes the O(1) frozen cache, and fires
+	`OnDataUpdated` if diffs exist.
 ]]
 local function updateEffectiveProjection()
-	local prevEffective = _effectiveData
-	local newEffective = computeEffectiveData()
+	const prevEffective = _effectiveData
+	const newEffective = computeEffectiveData()
 
 	if not newEffective then
 		return
 	end
 
 	_effectiveData = newEffective
+	const frozenEffective = TableUtil.DeepFreezeClone(newEffective) :: PlayerData
+	_frozenEffectiveData = frozenEffective
 
 	if not prevEffective then
 		return
 	end
 
-	local effectiveDiff = TableUtil.Diff(prevEffective, newEffective)
+	const effectiveDiff = TableUtil.Diff(prevEffective, newEffective)
 	if effectiveDiff then
-		local frozenCopy = TableUtil.DeepFreezeClone(_effectiveData) :: PlayerData
-		DataController.OnDataUpdated:Fire(frozenCopy, effectiveDiff)
+		DataController.OnDataUpdated:Fire(frozenEffective, effectiveDiff)
 	end
 end
 
@@ -90,14 +94,20 @@ end
 	Called when the server replicates the full initial player data snapshot.
 ]]
 local function onInitialDataLoaded(data: PlayerData)
-	_authoritativeData = TableUtil.DeepClone(data)
-	table.clear(_pendingTransactions)
-	_effectiveData = TableUtil.DeepClone(data)
+	const authCopy = TableUtil.DeepClone(data)
+	_authoritativeData = authCopy
+	_frozenAuthoritativeData = TableUtil.DeepFreezeClone(authCopy) :: PlayerData
 
-	local frozenCopy = TableUtil.DeepFreezeClone(_effectiveData)
-	_initialDataSignal:Fire(frozenCopy)
-	DataController.OnInitialDataLoaded:Fire(frozenCopy)
-	DataController.OnDataUpdated:Fire(frozenCopy, {})
+	table.clear(_pendingTransactions)
+
+	const effectiveCopy = TableUtil.DeepClone(data)
+	_effectiveData = effectiveCopy
+	const frozenEffective = TableUtil.DeepFreezeClone(effectiveCopy) :: PlayerData
+	_frozenEffectiveData = frozenEffective
+
+	_initialDataSignal:Fire(frozenEffective)
+	DataController.OnInitialDataLoaded:Fire(frozenEffective)
+	DataController.OnDataUpdated:Fire(frozenEffective, {})
 end
 
 --[[
@@ -105,7 +115,7 @@ end
 ]]
 local function onPlayerDataUpdated(deltas: Deltas, lastTxId: number?)
 	if not _authoritativeData then
-		logger:warn(`Failed to update local data cache: authoritative data not initialized`)
+		logger:warn("Failed to update local data cache: authoritative data not initialized")
 		return
 	end
 
@@ -119,48 +129,48 @@ local function onPlayerDataUpdated(deltas: Deltas, lastTxId: number?)
 	end
 
 	-- Update authoritative ground truth
-	local updated = TableUtil.Apply(TableUtil.DeepClone(_authoritativeData), deltas)
+	const updated = TableUtil.Apply(TableUtil.DeepClone(_authoritativeData), deltas) :: PlayerData
 	_authoritativeData = updated
+	_frozenAuthoritativeData = TableUtil.DeepFreezeClone(updated) :: PlayerData
 
 	-- Re-project effective state and emit only net changes to listeners
 	updateEffectiveProjection()
 end
 
---[[
-	Synchronous getter for authoritative server data.
+function DataController.IsLoaded(): boolean
+	return _frozenEffectiveData ~= nil
+end
 
-	This function is only useful for actions that should **never** be optimistically
-	predicted (e.g., Robux purchases, trading high-tier items with other players),
-	where you want to ensure the server truth has enough balance before replicating.
+--[[
+	O(1) synchronous getter for authoritative server data.
+	Use for flows that must **never** be optimistically predicted (e.g. Robux purchases).
 ]]
 function DataController.GetAuthoritativeData(): PlayerData?
-	if _authoritativeData then
-		return TableUtil.DeepFreezeClone(_authoritativeData)
-	end
-	return nil
+	return _frozenAuthoritativeData
 end
 
 --[[
-	Synchronous getter for projected effective data.
+	O(1) synchronous getter for projected effective data.
 ]]
 function DataController.GetEffectiveData(): PlayerData?
-	if _effectiveData then
-		return TableUtil.DeepFreezeClone(_effectiveData)
-	end
-	return nil
+	return _frozenEffectiveData
 end
 
+--[[
+	O(1) synchronous getter for projected effective data.
+
+	Alias for `DataController.GetEffectiveData()`.
+]]
 function DataController.Get(): PlayerData?
-	return DataController.GetEffectiveData()
+	return _frozenEffectiveData
 end
 
 --[[
 	Asynchronous getter for projected effective data.
 ]]
 function DataController.GetEffectiveDataAsync(): Promise<PlayerData>
-	if _effectiveData then
-		local frozenCopy = TableUtil.DeepFreezeClone(_effectiveData)
-		return LeanPromise.resolve(frozenCopy)
+	if _frozenEffectiveData then
+		return LeanPromise.resolve(_frozenEffectiveData)
 	end
 
 	return LeanPromise.new(function(resolve, _reject, onCancel)
@@ -196,9 +206,9 @@ function DataController.PredictMutation(mutator: Mutator): number
 	end
 
 	_nextTransactionId += 1
-	local transactionId = _nextTransactionId
+	const transactionId = _nextTransactionId
 
-	local transaction: Transaction = {
+	const transaction: Transaction = {
 		Id = transactionId,
 		TimeStamp = os.clock(),
 		Mutator = mutator,
@@ -216,13 +226,17 @@ function DataController.PredictMutation(mutator: Mutator): number
 end
 
 --[[
-	For actions that don't have a 1-to-1 RemoteEvent ticket (e.g. coin pickups).
+	For actions that don't have a 1-to-1 RemoteEvent ticket (e.g. instant UI toggles).
 ]]
 function DataController.PredictEphemeralMutation(mutator: Mutator, duration: number?): number
-	local txId = DataController.PredictMutation(mutator)
+	const txId = DataController.PredictMutation(mutator)
+	if txId == -1 then
+		return -1
+	end
 
 	-- Auto-retire as confirmed once server replication is expected to have arrived
-	task.delay(duration or 0.5, function()
+	const expireSeconds = if duration ~= nil then duration else 0.5
+	task.delay(expireSeconds, function()
 		DataController.ReconcileTransaction(txId, true)
 	end)
 	return txId
@@ -258,7 +272,9 @@ function DataController.ReconcileTransaction(
 
 	-- If the server provided an explicit delta payload with the acknowledgement, merge it into S_auth
 	if serverDeltas and _authoritativeData then
-		_authoritativeData = TableUtil.Apply(TableUtil.DeepClone(_authoritativeData :: any), serverDeltas)
+		const updatedAuth = TableUtil.Apply(TableUtil.DeepClone(_authoritativeData :: any), serverDeltas) :: PlayerData
+		_authoritativeData = updatedAuth
+		_frozenAuthoritativeData = TableUtil.DeepFreezeClone(updatedAuth) :: PlayerData
 	end
 
 	updateEffectiveProjection()
