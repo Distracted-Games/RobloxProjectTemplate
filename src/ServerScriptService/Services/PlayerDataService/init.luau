@@ -23,12 +23,17 @@ export type Deltas = { [PlayerDataKey]: any }
 export type MessageHandler = (player: Player, payload: any) -> ()
 
 type Promise<T> = LeanPromise.Promise<T>
-type Profile = ProfileStore2.Profile<PlayerDataType.PlayerData>
+type Profile = ProfileStore2.Profile<PlayerData>
 type ProfileStore<T> = ProfileStore2.ProfileStore<T>
+type SignalConnection = Signal.Connection
 type UnhandledMessage = {
 	key: string,
 	data: any,
 	processed: () -> (),
+}
+type DrainedBatch = {
+	player: Player,
+	entries: { UnhandledMessage },
 }
 
 local logger = Logger.new({
@@ -37,13 +42,14 @@ local logger = Logger.new({
 })
 
 -- A cache for active, loaded profiles for quick access.
-local _profiles: { [Player]: Profile } = {}
-local _loadingProfiles: { [Player]: Profile } = {}
-local _loadingPlayers: { [Player]: boolean } = {}
-local _frozenProfiles: { [Player]: PlayerData } = {}
-local _activeWorkingCopies: { [Player]: PlayerData } = {}
-local _messageHandlers: { [string]: MessageHandler } = {}
-local _unhandledMessages: { [Player]: { UnhandledMessage } } = {}
+const _profiles: { [Player]: Profile } = {}
+const _loadingPlayers: { [Player]: boolean } = {}
+const _frozenProfiles: { [Player]: PlayerData } = {}
+const _activeWorkingCopies: { [Player]: PlayerData } = {}
+const _messageHandlers: { [string]: MessageHandler } = {}
+const _unhandledMessages: { [Player]: { UnhandledMessage } } = {}
+const _sessionEndConnections: { [Player]: SignalConnection } = {}
+
 -- The single ProfileStore2 instance for all player data.
 local _playerStore: ProfileStore<PlayerData>? = nil
 
@@ -55,8 +61,13 @@ PlayerDataService.Signals = {
 }
 
 local function clearPlayerCaches(player: Player)
+	const sessionConnection = _sessionEndConnections[player]
+	if sessionConnection and sessionConnection.Connected then
+		sessionConnection:Disconnect()
+	end
+	_sessionEndConnections[player] = nil
+
 	_profiles[player] = nil
-	_loadingProfiles[player] = nil
 	_loadingPlayers[player] = nil
 	_frozenProfiles[player] = nil
 	_activeWorkingCopies[player] = nil
@@ -90,7 +101,7 @@ local function invokeMessageHandler(
 
 	const ok, err = pcall(handler, player, data)
 	if not ok then
-		logger:warn(`Message handler '{key}' failed for { player.Name}: {tostring(err)}`)
+		logger:warn(`Message handler '{key}' failed for {player.Name}: {tostring(err)}`)
 		return
 	end
 
@@ -136,7 +147,7 @@ local function commitWorkingCopy(
 	workingCopy: PlayerData,
 	triggeredByTxId: number?
 ): Deltas
-	const indexedData = profile.Data :: PlayerData
+	const indexedData = profile.Data
 	const deltas: Deltas? = TableUtil.Diff(indexedData, workingCopy)
 	if not deltas then
 		return {}
@@ -164,8 +175,8 @@ end
 	O(1) frozen snapshot, and emits `PlayerProfileLoaded`.
 ]]
 local function onProfileLoaded(player: Player, profile: Profile)
-	if player.Parent ~= Players then
-		-- Player left while their data was loading. Safely release the session.
+	if player.Parent ~= Players or not profile:IsActive() then
+		-- Player left while their data was loading or profile is inactive. Safely release the session.
 		_loadingPlayers[player] = nil
 		profile:EndSession()
 		return
@@ -174,22 +185,12 @@ local function onProfileLoaded(player: Player, profile: Profile)
 	profile:AddUserId(player.UserId) -- Required for GDPR compliance
 	profile:Reconcile() -- Fills in any new fields from the default data template
 
-	_loadingProfiles[player] = profile
-
-	if player.Parent ~= Players or not profile:IsActive() then
-		_loadingProfiles[player] = nil
-		_loadingPlayers[player] = nil
-		profile:EndSession()
-		return
-	end
-
 	_loadingPlayers[player] = nil
-	_loadingProfiles[player] = nil
 	_profiles[player] = profile
-	logger:logTable(profile.Data, `Profile loaded for {player.Name}:`)
 
 	-- Connecting a listener for when the session is forcibly ended (e.g., another server logs in).
-	profile.OnSessionEnd:Connect(function()
+	_sessionEndConnections[player] = profile.OnSessionEnd:Connect(function()
+		_sessionEndConnections[player] = nil
 		clearPlayerCaches(player)
 		if player.Parent == Players then
 			player:Kick("Your data profile has been loaded in another server.")
@@ -203,6 +204,7 @@ local function onProfileLoaded(player: Player, profile: Profile)
 	const frozenData = TableUtil.DeepFreezeClone(profile.Data) :: PlayerData
 	_frozenProfiles[player] = frozenData
 	PlayerDataService.Signals.PlayerProfileLoaded:Fire(player, frozenData)
+	logger:logTable(profile.Data, `Profile loaded for {player.Name}:`)
 end
 
 local function onPlayerAdded(player: Player)
@@ -233,17 +235,12 @@ local function onPlayerAdded(player: Player)
 end
 
 local function onPlayerRemoving(player: Player)
-	const loadingProfile = _loadingProfiles[player]
-	if loadingProfile then
-		loadingProfile:EndSession()
-	end
-	
 	const profile = _profiles[player]
+	clearPlayerCaches(player)
+
 	if profile then
 		profile:EndSession()
 	end
-
-	clearPlayerCaches(player)
 end
 
 function PlayerDataService.IsLoaded(player: Player): boolean
@@ -358,29 +355,36 @@ function PlayerDataService.UpdateData(
 	triggeredByTxId: number?
 ): (boolean, Deltas?)
 	const profile = _profiles[player]
-	if not profile then
-		logger:warn(`Failed to find cached profile for {player.Name} (ID: {player.UserId})`)
+	if not (profile and profile:IsActive()) then
+		logger:warn(`Failed to find active cached profile for {player.Name} (ID: {player.UserId})`)
 		return false, nil
 	end
 
 	const existingWorkingCopy = _activeWorkingCopies[player]
 	if existingWorkingCopy then
-		const nestedSuccess, nestedErr = pcall(updateFunc, existingWorkingCopy)
-		if not nestedSuccess then
-			logger:warn(`Nested data update failed for {player.Name} (ID: {player.UserId}): {tostring(nestedErr)}`)
-			return false, nil
-		end
+		updateFunc(existingWorkingCopy)
 		return true, {}
 	end
 
 	const workingCopy = TableUtil.DeepClone(profile.Data) :: PlayerData
 	_activeWorkingCopies[player] = workingCopy
 
-	local success, err = pcall(updateFunc, workingCopy)
+	const updateThread = coroutine.create(updateFunc)
+	const success, err = coroutine.resume(updateThread, workingCopy)
 	_activeWorkingCopies[player] = nil
 
 	if not success then
 		logger:warn(`Failed to update player data for {player.Name} (ID: {player.UserId}): {tostring(err)}`)
+		return false, nil
+	end
+
+	if coroutine.status(updateThread) ~= "dead" then
+		logger:warn(`UpdateData callback yielded for {player.Name} (ID: {player.UserId}); update discarded.`)
+		return false, nil
+	end
+
+	if _profiles[player] ~= profile or not profile:IsActive() then
+		logger:warn(`Player {player.Name} profile became inactive before update could be committed.`)
 		return false, nil
 	end
 
@@ -397,13 +401,8 @@ function PlayerDataService.RegisterMessageHandler(key: string, handler: MessageH
 	assert(_messageHandlers[key] == nil, `Message handler for key '{key}' is already registered.`)
 	_messageHandlers[key] = handler
 
-	type DrainedBatch = {
-		player: Player,
-		entries: { UnhandledMessage },
-	}
-
-	local batchesToDispatch: { DrainedBatch } = {}
-	local emptyPlayers: { Player } = {}
+	const batchesToDispatch: { DrainedBatch } = {}
+	const emptyPlayers: { Player } = {}
 
 	for player, queue in _unhandledMessages do
 		local pendingForKey: { UnhandledMessage } = {}
@@ -457,7 +456,7 @@ function PlayerDataService.SendProfileMessageAsync(userId: number, key: string, 
 		return LeanPromise.reject("PlayerStore is not initialized.")
 	end
 
-	return _playerStore:MessageAsync(`{PROFILE_KEY_PREFIX}{userId}`, { key = key, data = payload, })
+	return _playerStore:MessageAsync(`{PROFILE_KEY_PREFIX}{userId}`, { key = key, data = payload })
 end
 
 function PlayerDataService.Setup()
@@ -474,7 +473,7 @@ function PlayerDataService.Setup()
 	logger:warn(
 		`CRITICAL: ProfileStore '{PLAYER_DATA_STORE}' could not be created. Data will not save or load. Error: {storeOrErr}`
 	)
-	
+
 	-- Prevent new players from joining this broken server.
 	Players.PlayerAdded:Connect(function(player: Player)
 		player:Kick(
