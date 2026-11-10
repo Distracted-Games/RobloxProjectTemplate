@@ -22,6 +22,13 @@ function DataReplicationService.Start()
 		Network.fireClient(Network.RemoteEvents.InitialDataLoaded, player, data)
 	end)
 
+	Network.connectEvent(Network.RemoteEvents.RequestInitialData, function(player: Player)
+		const data = PlayerDataService.GetProfile(player)
+		if data then
+			Network.fireClient(Network.RemoteEvents.InitialDataLoaded, player, data)
+		end
+	end)
+
 	for _, player in Players:GetPlayers() do
 		const data = PlayerDataService.GetProfile(player)
 		if data then

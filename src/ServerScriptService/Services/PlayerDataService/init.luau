@@ -149,9 +149,11 @@ local function commitWorkingCopy(
 ): Deltas
 	const indexedData = profile.Data
 	const deltas: Deltas? = TableUtil.Diff(indexedData, workingCopy)
-	if not deltas then
+	if not deltas and not triggeredByTxId then
 		return {}
 	end
+
+	const effectiveDeltas = deltas or {}
 
 	for key, newValue in workingCopy do
 		indexedData[key] = newValue
@@ -166,8 +168,8 @@ local function commitWorkingCopy(
 	const frozenData = TableUtil.DeepFreezeClone(profile.Data) :: PlayerData
 	_frozenProfiles[player] = frozenData
 
-	PlayerDataService.Signals.OnDataUpdated:Fire(player, frozenData, deltas, triggeredByTxId)
-	return deltas
+	PlayerDataService.Signals.OnDataUpdated:Fire(player, frozenData, effectiveDeltas, triggeredByTxId)
+	return effectiveDeltas
 end
 
 --[[
