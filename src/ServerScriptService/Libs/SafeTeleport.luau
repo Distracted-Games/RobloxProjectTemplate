@@ -14,6 +14,7 @@
     experience to reduce failed teleports.
 ]]
 
+const Players = game:GetService("Players")
 const TeleportService = game:GetService("TeleportService")
 
 const Logger = require("../../ReplicatedStorage/Source/Utility/Logger")
@@ -126,5 +127,9 @@ Network.connectEvent(
 		SafeTeleport.Teleport(player, placeID, options)
 	end
 )
+
+Players.PlayerRemoving:Connect(function(player: Player)
+    totalAttempts[player] = nil
+end)
 
 return SafeTeleport
