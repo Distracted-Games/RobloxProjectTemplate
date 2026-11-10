@@ -15,10 +15,17 @@
 ]]
 
 const Players = game:GetService("Players")
+const RunService = game:GetService("RunService")
 const TeleportService = game:GetService("TeleportService")
 
 const Logger = require("../../ReplicatedStorage/Source/Utility/Logger")
 const Network = require("../../ReplicatedStorage/Source/Libs/Network")
+
+-- SafeTeleport Constants
+const SHORT_ATTEMPT_LIMIT = 3 -- How many time to try teleporting within pcall
+const ATTEMPT_LIMIT = 5 -- How many total failed teleport attempts to make before no longer trying
+const RETRY_DELAY = 1 -- The time (in seconds) between reattempting to teleport after a failed result
+const FLOOD_DELAY = 15 -- If too many attempts have been made to the server recently, how long to wait (in seconds)
 
 local logger = Logger.new({
 	Debug = false,
@@ -27,19 +34,14 @@ local logger = Logger.new({
 
 local totalAttempts = {} :: { [Player]: number }
 
--- SafeTeleport Constants
-const SHORT_ATTEMPT_LIMIT = 3 -- how many time to try teleporting within pcall
-const ATTEMPT_LIMIT = 5 -- how many total failed teleport attempts to make before no longer trying
-const RETRY_DELAY = 1 -- the time (in seconds) between reattempting to teleport after a failed result
-const FLOOD_DELAY = 15 -- if too many attempts have been made to the server recently, how long to wait (in seconds)
-
-local function SafeTeleportWithRetry(
+local function safeTeleportWithRetry(
 	player: Player,
 	placeId: number,
 	options: TeleportOptions?
 ): (boolean?, TeleportAsyncResult?)
 	local attemptIndex = 0
-	local success, errorMessage -- define pcall results outside of loop so results can be reported later on
+	local success: boolean
+	local errorMessage: any
 
 	repeat
 		success, errorMessage =
@@ -71,9 +73,9 @@ local function handleFailedTeleport(
 	teleportOptions: Instance
 )
 	if teleportResult == Enum.TeleportResult.Flooded then
-		task.wait(FLOOD_DELAY) -- too many attempts made recently, wait to make another
+		task.wait(FLOOD_DELAY) -- Too many attempts made recently, wait to make another
 	elseif teleportResult == Enum.TeleportResult.Failure then
-		task.wait(RETRY_DELAY) -- teleport attempt just failed, wait to retry
+		task.wait(RETRY_DELAY) -- Teleport attempt just failed, wait to retry
 	end
 
 	if not player:IsA("Player") then
@@ -89,15 +91,15 @@ local function handleFailedTeleport(
 	if totalAttempts[player] and totalAttempts[player] < ATTEMPT_LIMIT then
 		logger:debug(`Teleport attempts: {totalAttempts[player]}/{ATTEMPT_LIMIT}`)
 		-- Retry teleport again
-		SafeTeleportWithRetry(player, targetPlaceId, teleportOptions :: TeleportOptions)
+		safeTeleportWithRetry(player, targetPlaceId, teleportOptions :: TeleportOptions)
 	else
-		-- fire event to show the player the teleport failed
+		-- Fire event to show the player the teleport failed
 		Network.fireClient(
 			Network.RemoteEvents.TeleportFailed,
 			player,
 			`Invalid teleport {teleportResult.Name}: {errorMessage}`
 		)
-		-- if the teleport is invalid, report the error instead of retrying inifinitely
+		-- If the teleport is invalid, report the error instead of retrying inifinitely
 		logger:warn(`Invalid teleport {teleportResult.Name}: {errorMessage}`)
 		totalAttempts[player] = nil
 	end
@@ -105,28 +107,20 @@ end
 
 TeleportService.TeleportInitFailed:Connect(handleFailedTeleport)
 
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
-
 local SafeTeleport = {}
 
 -- Call this function in any script instead of using `TeleportService:TeleportAsync`
 function SafeTeleport.Teleport(player: Player, placeID: number, options: TeleportOptions?)
-	-- fire event to show Teleport UI, informing the player they are being teleported
+	if RunService:IsStudio() then
+		logger:warn(`SafeTeleport.Teleport skipped in Roblox Studio for {player.Name} (placeId: {placeID}).`)
+		return
+	end
+
+	-- Fire event to show Teleport UI, informing the player they are being teleported
 	Network.fireClient(Network.RemoteEvents.Teleporting, player, placeID)
 	logger:debug(`Teleporting {player.Name} to placeId: {placeID}`)
-	-- safely teleport
-	SafeTeleportWithRetry(player, placeID, options)
+	safeTeleportWithRetry(player, placeID, options)
 end
-
--- This is the event that will be fired if a client initiates the teleport
-Network.connectEvent(
-	Network.RemoteEvents.InitiateTeleport,
-	function(player: Player, placeID: number, options: TeleportOptions?)
-		-- ReplicatedStorage.Remotes.RemoteEvents.Teleporting:FireClient(player, placeID)
-		SafeTeleport.Teleport(player, placeID, options)
-	end
-)
 
 Players.PlayerRemoving:Connect(function(player: Player)
     totalAttempts[player] = nil
