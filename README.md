@@ -264,7 +264,6 @@ A server-side teleportation utility that replaces raw `TeleportService:TeleportA
 
 * **Retry & Flood Backoff**: Distinguishes between transient failure conditions and rate-limiting (`Enum.TeleportResult.Flooded`), automatically managing backoff intervals and retry quotas.
 * **Client Synchronization**: Fires `Teleporting` and `TeleportFailed` network events to notify client UI, allowing you to show loading screens or failure alerts.
-* **Client Teleport Bridge**: Listens for client-requested teleports (`InitiateTeleport`) and verifies execution securely on the server.
 
 ```lua
 --!strict
@@ -306,7 +305,7 @@ High-performance table operations for immutable state handling and network delta
 #### `Connections`
 A lightweight connection lifecycle manager:
 * Collects and tracks arbitrary `RBXScriptConnection` and custom signal connections.
-* Provides `Add(...)`, `Remove(...)`, `RemoveAndDisconnect(...)`, and `Disconnect()` for reliable one-step cleanup when an object or view is destroyed.
+* Provides `Add(...)`, `Remove(...)`, `RemoveAndDisconnect(...)`, and `DisconnectAll()` for reliable one-step cleanup when an object or view is destroyed.
 
 ---
 

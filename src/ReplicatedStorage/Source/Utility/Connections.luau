@@ -15,7 +15,7 @@ type ClassType = {
 	Add: (self: Connections, ...ConnectionOrSignal) -> (),
 	Remove: (self: Connections, ...ConnectionOrSignal) -> (),
 	RemoveAndDisconnect: (self: Connections, ...ConnectionOrSignal) -> (),
-	Disconnect: (self: Connections) -> (),
+	DisconnectAll: (self: Connections) -> (),
 }
 
 export type Connections = setmetatable<ClassType, typeof(Connections)>
@@ -53,7 +53,7 @@ function Connections.RemoveAndDisconnect(self: Connections, ...: ConnectionOrSig
 	end
 end
 
-function Connections.Disconnect(self: Connections)
+function Connections.DisconnectAll(self: Connections)
 	for _, connection in self._connections do
 		(connection :: RBXScriptConnection):Disconnect()
 	end
